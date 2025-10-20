@@ -3,8 +3,12 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, unlink } from 'node:fs/promises';
+import os from 'node:os';
 import multer from 'multer';
+import { spawn } from 'node:child_process';
+
+// Оставляем REST-клиент на месте для бэкап-задач/диагностики
 import { getPresigned, uploadToSignedUrl, getResult } from './api/realitydefender.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,10 +21,8 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-});
+// multipart до 5 MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // helpers
 function summarize(rs) {
@@ -31,6 +33,32 @@ function summarize(rs) {
     rs?.label ||
     (confidence == null ? 'inconclusive' : (confidence > 0.5 ? 'fake' : 'real'));
   return { status, verdict, confidence, raw: rs };
+}
+
+// run Python SDK
+async function detectWithPython(tempPath) {
+  const script = path.join(__dirname, 'rd_proxy.py');
+  return new Promise((resolve, reject) => {
+    const p = spawn('python3', [script, '--file', tempPath], {
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let out = '';
+    let err = '';
+    p.stdout.on('data', (d) => (out += d.toString()));
+    p.stderr.on('data', (d) => (err += d.toString()));
+    p.on('close', (code) => {
+      if (code !== 0) return reject(new Error(err || out || `rd_proxy exit ${code}`));
+      try {
+        const json = JSON.parse(out);
+        if (!json?.ok) return reject(new Error(json?.error || 'rd_proxy error'));
+        resolve(json);
+      } catch (e) {
+        reject(new Error(`Bad JSON from rd_proxy: ${e.message}; out=${out}`));
+      }
+    });
+  });
 }
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -58,10 +86,11 @@ app.get('/debug/presign', async (_req, res) => {
   }
 });
 
-// 1) Анализ: принимает файл (optional), иначе public/demo.wav
+// 1) Анализ: multipart file или public/demo.wav
 app.post('/analyze', upload.single('file'), async (req, res) => {
   const started = Date.now();
 
+  // DEMO
   if (RD_DEMO) {
     return res.json({
       requestId: 'demo-local',
@@ -73,62 +102,40 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
     });
   }
 
+  // === PRODUCTION PATH via Python SDK ===
+  let tmp = null;
   try {
-    let buf, mime = 'audio/wav', clientName = 'demo.wav';
+    let buf;
+    let clientName = 'demo.wav';
     if (req.file?.buffer?.length) {
       buf = req.file.buffer;
       clientName = req.file.originalname || clientName;
-      const m = (req.file.mimetype || '').toLowerCase();
-      mime =
-        m.includes('wav') ? 'audio/wav' :
-        m.includes('mpeg') ? 'audio/mpeg' :
-        m.includes('mp4') ? 'audio/mp4' :
-        m.includes('webm') ? 'audio/webm' :
-        m.includes('ogg') ? 'audio/ogg' :
-        'audio/wav';
     } else {
-      const fallback = path.join(__dirname, 'public', 'demo.wav');
-      buf = await readFile(fallback);
+      buf = await readFile(path.join(__dirname, 'public', 'demo.wav'));
     }
 
-    const safeBase = clientName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileName = `${Date.now()}_${safeBase}`;
+    const safe = (clientName || 'audio.wav').replace(/[^a-zA-Z0-9._-]/g, '_');
+    tmp = path.join(os.tmpdir(), `${Date.now()}_${safe}`);
+    await writeFile(tmp, buf);
 
-    const p = await getPresigned(fileName, { retries: 12, baseDelayMs: 800 });
-    await uploadToSignedUrl(p.signedUrl, buf, mime);
-
-    const id = p.mediaId || p.requestId;
-    if (!id) throw new Error('No mediaId from presign');
-
-    const POLL_MS = 3000;
-    const TIMEOUT_MS = 180000;
-    const deadline = Date.now() + TIMEOUT_MS;
-
-    let last = null;
-    let status = 'ANALYZING';
-
-    while (Date.now() < deadline) {
-      last = await getResult(id).catch(() => null);
-      status = last?.resultsSummary?.status || status;
-      if (status && status !== 'ANALYZING') break;
-      await new Promise(r => setTimeout(r, POLL_MS));
-    }
-
-    const s = summarize(last?.resultsSummary || {});
-    res.json({
-      requestId: id,
-      status: s.status,
-      verdict: s.verdict,
-      confidence: s.confidence,
-      inferenceTimeMs: Date.now() - started,
-      raw: s.raw,
+    const py = await detectWithPython(tmp);
+    // py: { ok, request_id, status, verdict, confidence, elapsed_ms, models, raw }
+    return res.json({
+      requestId: py.request_id,
+      status: py.status,
+      verdict: py.verdict,
+      confidence: py.confidence,
+      inferenceTimeMs: py.elapsed_ms ?? (Date.now() - started),
+      raw: { models: py.models, rdStatus: py.status, sdk: py.raw },
     });
   } catch (e) {
-    res.status(503).json({ error: 'RD_UNAVAILABLE', detail: String(e.message || e) });
+    return res.status(503).json({ error: 'RD_UNAVAILABLE', detail: String(e.message || e) });
+  } finally {
+    if (tmp) { try { await unlink(tmp); } catch { /* noop */ } }
   }
 });
 
-// 2) Статус: прокси к RD
+// 2) Статус (для SDK-пути используем мок, т.к. SDK уже вернул финал)
 app.get('/status/:id', async (req, res) => {
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: 'requestId required' });
@@ -143,16 +150,11 @@ app.get('/status/:id', async (req, res) => {
     });
   }
 
+  // REST-прокси оставим на случай, если понадобится
   try {
     const r = await getResult(id);
     const s = summarize(r?.resultsSummary || {});
-    res.json({
-      requestId: id,
-      status: s.status,
-      verdict: s.verdict,
-      confidence: s.confidence,
-      raw: s.raw,
-    });
+    res.json({ requestId: id, status: s.status, verdict: s.verdict, confidence: s.confidence, raw: s.raw });
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
   }
