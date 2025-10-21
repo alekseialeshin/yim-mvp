@@ -1,0 +1,5 @@
+# YIM MVP Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# RealityDefender SDK for AI content detection
+realitydefender>=1.0.0
