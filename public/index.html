@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YES IT'S ME</title>
   <style>
-    :root{ --bg:#071738; --fg:#fff; --muted:#c7d2fe; --brand:#2144ff; --panel:#0b204a; --border:#132a63; }
+    :root{ --bg:#071738; --fg:#ffffff; --muted:#c7d2fe; --brand:#451186; --panel:#0b204a; --border:#132a63; }
     html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Inter,Roboto,sans-serif}
     .wrap{max-width:780px;margin:40px auto;padding:0 16px;text-align:center}
     h1{font-size:56px;letter-spacing:1.5px;margin:0 0 24px;font-style:italic;font-weight:800}
@@ -17,9 +17,23 @@
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .file-label{border:1px solid var(--border);background:#0f1f49;color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:700}
     #wave{height:110px;margin:12px 0;border-radius:10px;overflow:hidden;background:var(--panel);border:1px solid var(--border)}
-    #spec{height:180px;margin:0 0 16px;border-radius:10px;overflow:hidden;background:#040e26;border:1px solid var(--border)}
-    /* оставляем цветную спектрограмму */
-    #spec canvas{filter:grayscale(0)}
+    #evidence{margin:0 0 16px;border-radius:10px;overflow:hidden;background:#040e26;border:1px solid var(--border)}
+    #riskStrip{display:block;width:100%;height:120px;background:#040e26}
+    #votes{margin:12px;padding:0 12px}
+    #metaBadges{margin:0 0 12px;padding:0 12px;display:flex;gap:8px;flex-wrap:wrap}
+    #summaryCard{margin:0;padding:12px;border-top:1px solid var(--border);background:var(--panel)}
+    .badge{background:#0f1f49;color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600}
+    .vote{margin:6px 0;display:flex;align-items:center;gap:8px}
+    .vote-bar{height:12px;border-radius:6px;overflow:hidden;background:#374151}
+    .vote-fill{height:100%;transition:width 0.3s}
+    .vote-label{font-size:12px;color:var(--muted);min-width:80px}
+    .vote-score{font-size:12px;color:#fff}
+    .legend{margin:8px 0 0;font-size:11px;color:var(--muted)}
+    .legend span{margin-right:12px}
+    .legend .auth{color:#19c37d}
+    .legend .man{color:#ef4444}
+    .legend .inc{color:#9ca3af}
+    .cursor{position:absolute;top:0;left:0;width:2px;height:120px;background:#fff;z-index:10;pointer-events:none}
     .analyze{width:340px;margin:18px auto 8px;border-radius:12px}
     .meter{height:18px;font-size:12px;color:var(--muted);margin:6px 0 18px}
     .result{max-width:560px;margin:16px auto;text-align:left;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--panel)}
@@ -29,8 +43,10 @@
     input[type=file]{display:none}
     pre{color:#dbeafe}
   </style>
-  <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
-  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/spectrogram.min.js"></script>
+
+  <!-- единая версия core+plugin -->
+  <script src="https://unpkg.com/wavesurfer.js@7.7.13"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7.7.13/dist/plugins/spectrogram.min.js"></script>
 </head>
 <body>
   <div class="wrap">
@@ -50,7 +66,13 @@
     </div>
 
     <div id="wave"></div>
-    <div id="spec"></div>
+    <div id="evidence">
+      <canvas id="riskStrip" height="120"></canvas>
+      <div class="cursor" id="riskCursor"></div>
+      <div id="votes"></div>
+      <div id="metaBadges"></div>
+      <div id="summaryCard"></div>
+    </div>
 
     <button id="analyzeBtn" class="btn primary analyze" disabled>Analyze</button>
     <div id="meter" class="meter">Inference Time : ms</div>
@@ -67,7 +89,6 @@
     </div>
   </div>
 
-  <!-- cache-bust -->
-  <script src="./app.js?v=20251021-08"></script>
+  <script src="./app.js?v=20251021-11"></script>
 </body>
 </html>
