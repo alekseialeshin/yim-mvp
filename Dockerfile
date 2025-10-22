@@ -9,8 +9,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY requirements.txt ./
-RUN python3 -m pip install --upgrade pip setuptools wheel \
-	&& pip3 install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --break-system-packages --upgrade pip setuptools wheel \
+	&& pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 COPY . .
 ENV PORT=10000 NODE_ENV=production
 EXPOSE 10000
