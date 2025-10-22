@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: yim-mvp
+    env: docker
+    region: frankfurt
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+  dockerfilePath: Dockerfile
+    # Render routes traffic to port 10000 for Docker web services.
+    # Our Dockerfile sets ENV PORT=10000 and EXPOSE 10000, and server reads PORT.
+    envVars:
+      - key: RD_API_KEY
+        sync: false  # set in Render Dashboard
+      - key: DEMO_MODE
+        value: "false"

@@ -137,10 +137,8 @@ async function ensureWav(inputPath) {
 
 app.get('/health', (_req, res) => {
   res.json({
-    ok: true,
-    py: resolvePython(),
-    demo: process.env.RD_DEMO ?? '0',
-    ffmpeg: !!ffmpegPath,
+    status: 'ok',
+    demo: process.env.DEMO_MODE,
   });
 });
 
@@ -172,6 +170,16 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
     const { path: wavPath, created } = await ensureWav(tmpIn);
     tmpWav = created; // удалим позже только если создавали
     if (created) console.log(`[FFMPEG] converted -> ${path.basename(wavPath)}`);
+
+    // Demo mode: return a simulated response without calling RD
+    if (process.env.DEMO_MODE === "true") {
+      return res.json({
+        source: "demo",
+        result: "real",
+        confidence: 0.87,
+        message: "Simulated RD response (no API call)"
+      });
+    }
 
     console.log(`[RD_PROXY] start ${path.basename(wavPath)}`);
     const py = await detectWithPython(wavPath);
