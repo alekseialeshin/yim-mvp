@@ -1,3 +1,3 @@
 # Python dependencies for rd_proxy.py
 # Reality Defender SDK (imported as `realitydefender`)
-reality-defender
+realitydefender
