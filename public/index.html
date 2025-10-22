@@ -51,7 +51,10 @@
 <body>
   <div class="wrap">
     <h1>YES IT'S ME</h1>
-    <div class="hint">PLEASE UPLOAD SHORT CLIP (&lt; 15 s / &lt; 5 MB).</div>
+    <div class="hint"><strong>PLEASE UPLOAD OR RECORD AUDIO CLIP (10 seconds to 5 minutes)</strong></div>
+    <div class="hint">Single-speaker audio or turn-taking conversations / up to 100MB</div>
+    <div class="hint">wav, flac, mp3, m4a, aac, ogg, opus</div>
+    <div class="hint">English, Spanish, Portuguese, Italian, German, French, Russian, Mandarin</div>
 
     <div class="row">
       <label class="file-label" id="fileLabel">
@@ -75,8 +78,7 @@
     </div>
 
     <button id="analyzeBtn" class="btn primary analyze" disabled>Analyze</button>
-    <div id="meter" class="meter">Inference Time : ms</div>
-
+    <div id="meter" class="meter">0.0 s</div>
     <div id="result" class="result hidden">
       <div class="kv"><strong>Verdict</strong><span id="verdict">-</span></div>
       <div class="kv"><strong>Confidence</strong><span id="conf">-</span></div>
@@ -89,6 +91,19 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20251021-11"></script>
+  <!-- Ensure required DOM nodes exist before app.js executes -->
+  <script>
+    (function ensureDom() {
+      if (!document.getElementById('meter')) {
+        const meter = document.createElement('div');
+        meter.id = 'meter';
+        meter.className = 'meter';
+        meter.textContent = '0.0 s';
+        const btn = document.getElementById('analyzeBtn');
+        (btn?.parentNode || document.body).insertBefore(meter, document.getElementById('result'));
+      }
+    })();
+  </script>
+  <script src="./app.js?v=20251021-11" defer></script>
 </body>
 </html>
