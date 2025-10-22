@@ -142,6 +142,19 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// extended diagnostics for troubleshooting (not used by Render health check)
+app.get('/healthz', (_req, res) => {
+  res.json({
+    status: 'ok',
+    port: PORT,
+    py: resolvePython(),
+    ffmpeg: !!ffmpegPath,
+    demoMode: process.env.DEMO_MODE,
+    uptimeSec: process.uptime(),
+    memoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+  });
+});
+
 app.post('/analyze', upload.single('file'), async (req, res) => {
   const t0 = Date.now();
   let tmpIn = null;
@@ -206,6 +219,27 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`YIM MVP server on http://localhost:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`YIM MVP server listening on 0.0.0.0:${PORT}`);
 });
+
+// graceful shutdown for container platforms (e.g., Render)
+function shutdown(sig) {
+  console.log(`[SHUTDOWN] received ${sig}, closing server...`);
+  try {
+    server.close(() => {
+      console.log('[SHUTDOWN] server closed');
+      process.exit(0);
+    });
+    // force-exit if not closed in time
+    setTimeout(() => {
+      console.warn('[SHUTDOWN] force exit after timeout');
+      process.exit(0);
+    }, 8000).unref();
+  } catch (e) {
+    console.error('[SHUTDOWN] error during close', e);
+    process.exit(1);
+  }
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
