@@ -4,6 +4,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, writeFile, unlink, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import os from 'node:os';
 import multer from 'multer';
 import { spawn } from 'node:child_process';
@@ -48,6 +49,89 @@ const upload = multer({
 
 // --- helpers ---
 
+// NEW: Aurigin API detection
+async function detectWithAurigin(audioPath, timeoutMs = 35000) {
+  const apiKey = process.env.AURIGIN_API_KEY;
+  if (!apiKey) {
+    throw new Error('AURIGIN_API_KEY not set');
+  }
+
+  const t0 = Date.now();
+  
+  // Используем FormData и axios как в quickstart
+  const { default: FormData } = await import('form-data');
+  const axios = (await import('axios')).default;
+  
+  const form = new FormData();
+  form.append('file', createReadStream(audioPath));
+
+  console.log(`[AURIGIN] calling API...`);
+
+  try {
+    const response = await axios.post('https://aurigin.ai/api-ext/predict', form, {
+      headers: {
+        'x-api-key': apiKey,
+        ...form.getHeaders()
+      },
+      timeout: timeoutMs
+    });
+
+    const elapsed = Date.now() - t0;
+    console.log(`[AURIGIN] response received in ${elapsed}ms`);
+
+    const json = response.data;
+
+    // Aurigin возвращает массивы predictions и global_probability
+    // Берём первый элемент как основной результат
+    const prediction = json.predictions?.[0] || 'unknown';
+    const probability = json.global_probability?.[0] ?? 0.5;
+    
+    // Normalize to our internal format
+    const verdict = prediction === 'fake' ? 'fake' : 
+                    prediction === 'real' ? 'real' : 'inconclusive';
+    const status = verdict === 'fake' ? 'MANIPULATED' :
+                   verdict === 'real' ? 'AUTHENTIC' : 'INCONCLUSIVE';
+    
+    // Confidence: если real, используем 1-probability (для fake), иначе probability
+    const confidence = prediction === 'real' ? (1 - probability) : probability;
+
+    const result = {
+      ok: true,
+      request_id: json.id || json.request_id || `aurigin-${Date.now()}`,
+      status,
+      verdict,
+      confidence,
+      elapsed_ms: json.processing_time_ms || elapsed,
+      models: json.predictions?.map((pred, i) => ({
+        name: `aurigin-model-${i + 1}`,
+        score: pred === 'fake' ? (json.global_probability?.[i] ?? 0.5) :
+               pred === 'real' ? (1 - (json.global_probability?.[i] ?? 0.5)) : 0.5
+      })) || [
+        { name: 'aurigin-ensemble', score: confidence }
+      ],
+      raw: json,
+    };
+    
+    console.log(`[AURIGIN] done id=${result.request_id} verdict=${result.verdict} ms=${result.elapsed_ms}`);
+    return result;
+  } catch (e) {
+    if (e.code === 'ECONNABORTED' || e.message?.includes('timeout')) {
+      throw new Error(`Aurigin API timeout after ${timeoutMs}ms`);
+    }
+    if (e.response) {
+      // Axios error with response
+      const status = e.response.status;
+      const data = typeof e.response.data === 'object' 
+        ? JSON.stringify(e.response.data) 
+        : e.response.data;
+      throw new Error(`Aurigin API ${status}: ${data}`);
+    }
+    throw e;
+  }
+}
+
+// OLD: Reality Defender (kept for rollback, commented out)
+/*
 function resolvePython() {
   if (process.env.PYTHON_BIN) return process.env.PYTHON_BIN;
   if (process.env.VIRTUAL_ENV) return path.join(process.env.VIRTUAL_ENV, 'bin', 'python');
@@ -86,6 +170,7 @@ function detectWithPython(inputPath, timeoutMs = 35000) {
     });
   });
 }
+*/
 
 const EXT_OK = new Set(['.wav', '.wave']);
 
@@ -139,6 +224,7 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     demo: process.env.DEMO_MODE,
+    provider: 'aurigin',
   });
 });
 
@@ -147,7 +233,8 @@ app.get('/healthz', (_req, res) => {
   res.json({
     status: 'ok',
     port: PORT,
-    py: resolvePython(),
+    provider: 'aurigin',
+    auriginKey: !!process.env.AURIGIN_API_KEY,
     ffmpeg: !!ffmpegPath,
     demoMode: process.env.DEMO_MODE,
     uptimeSec: process.uptime(),
@@ -184,16 +271,33 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
     tmpWav = created; // удалим позже только если создавали
     if (created) console.log(`[FFMPEG] converted -> ${path.basename(wavPath)}`);
 
-    // Demo mode: return a simulated response without calling RD
+    // Demo mode: return a simulated response without calling API
     if (process.env.DEMO_MODE === "true") {
       return res.json({
         source: "demo",
         result: "real",
         confidence: 0.87,
-        message: "Simulated RD response (no API call)"
+        message: "Simulated response (no API call)"
       });
     }
 
+    // NEW: Call Aurigin API
+    console.log(`[AURIGIN] start ${path.basename(wavPath)}`);
+    const result = await detectWithAurigin(wavPath);
+    console.log(`[AURIGIN] done id=${result.request_id} verdict=${result.verdict} ms=${result.elapsed_ms}`);
+
+    res.json({
+      requestId: result.request_id,
+      status: result.status,
+      verdict: result.verdict,
+      confidence: result.confidence,
+      inferenceTimeMs: result.elapsed_ms ?? (Date.now() - t0),
+      models: result.models,
+      raw: result.raw,
+    });
+
+    // OLD: Reality Defender call (kept for rollback)
+    /*
     console.log(`[RD_PROXY] start ${path.basename(wavPath)}`);
     const py = await detectWithPython(wavPath);
     console.log(`[RD_PROXY] done id=${py.request_id} verdict=${py.verdict} ms=${py.elapsed_ms}`);
@@ -207,6 +311,7 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
       models: py.models,
       raw: py.raw,
     });
+    */
   } catch (e) {
     console.error('[ERROR]', e?.message || e);
     res.status(502).json({ error: String(e.message || e) });
@@ -220,7 +325,7 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`YIM MVP server listening on 0.0.0.0:${PORT}`);
+  console.log(`YIM MVP server listening on 0.0.0.0:${PORT} (provider: aurigin)`);
 });
 
 // graceful shutdown for container platforms (e.g., Render)

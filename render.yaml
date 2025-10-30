@@ -7,7 +7,7 @@ services:
     branch: main
     autoDeploy: true
     healthCheckPath: /health
-  dockerfilePath: Dockerfile
+    dockerfilePath: Dockerfile
     # Render routes traffic to port 10000 for Docker web services.
     # Our Dockerfile sets ENV PORT=10000 and EXPOSE 10000, and server reads PORT.
     envVars:
