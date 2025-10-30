@@ -1,0 +1,53 @@
+# Koyeb Configuration
+# https://www.koyeb.com/docs/build-and-deploy/build-from-git/configure-app
+
+app: yim-mvp
+
+services:
+  - name: yim-mvp-web
+    type: web
+    
+    # Git configuration
+    git:
+      branch: main
+      buildCommand: ""
+      runCommand: npm start
+    
+    # Instance type
+    instance:
+      type: free  # Free tier (Nano instance)
+    
+    # Region selection
+    regions:
+      - fra  # Frankfurt, Germany
+    
+    # Port configuration
+    ports:
+      - port: 8000
+        protocol: http
+    
+    # Routes
+    routes:
+      - path: /
+        port: 8000
+    
+    # Environment variables
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      # Note: Set AURIGIN_API_KEY via Koyeb dashboard (as secret)
+    
+    # Health check
+    healthcheck:
+      http:
+        path: /health
+        port: 8000
+      initialDelay: 10
+      restartLimit: 3
+    
+    # Scaling configuration
+    scaling:
+      min: 1
+      max: 1
