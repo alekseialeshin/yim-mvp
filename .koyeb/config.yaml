@@ -26,7 +26,7 @@ services:
       - port: 8000
         protocol: http
     
-    # Routes
+    # Routes - все запросы идут на порт 8000
     routes:
       - path: /
         port: 8000

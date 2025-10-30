@@ -247,6 +247,8 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
   let tmpIn = null;
   let tmpWav = null;
 
+  console.log(`[ANALYZE] request from ${req.ip || req.connection?.remoteAddress}`);
+
   try {
     let buf;
     let name = 'demo.wav';

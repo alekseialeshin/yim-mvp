@@ -421,6 +421,13 @@ async function analyze(){
       throw new Error(t);
     }
 
+    const contentType = r.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      const text = await r.text();
+      console.error('[ANALYZE] Non-JSON response:', text.substring(0, 200));
+      throw new Error('Server returned HTML instead of JSON. Check server logs.');
+    }
+
     const json = await r.json();
     const tMs  = Number(json.inferenceTimeMs ?? 0);
     setStatus(`Inference Time : ${tMs || '—'} ms`);
