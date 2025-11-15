@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: yim-mvp
+    env: docker
+    region: frankfurt
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: AURIGIN_API_KEY
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
